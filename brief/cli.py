@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import logging
 import sys
@@ -15,11 +16,11 @@ import requests
 from dotenv import load_dotenv
 
 from brief import config
-from brief.config import IST, MAX_NEW_KEV, MAX_TECH_NEWS, NEWS_MAX_AGE, Settings
+from brief.config import COMPACT_PAYLOAD_CHARS, IST, MAX_NEW_KEV, MAX_TECH_NEWS, NEWS_MAX_AGE, Settings
 from brief.fulltext import add_fulltext
-from brief.gemini import GeminiClient, GeminiError, parse_brief
 from brief.http import make_session
 from brief.kev import build_kev_index, compact_entry, diff_new_kev, enrich_items
+from brief.llm import AllProvidersFailed, build_providers, generate_brief
 from brief.sources import (
     SecurityItem,
     TechItem,
@@ -102,6 +103,47 @@ def build_payload(
         "new_kev": [compact_entry(e) for e in new_kev],
         "tech_news": [{"title": t.title, "source_url": t.source_url, "snippet": t.snippet} for t in tech],
     }
+
+
+def _clip(text: str, limit: int) -> str:
+    return text if len(text) <= limit else text[: max(limit - 1, 0)].rstrip() + "…"
+
+
+def build_compact_payload(
+    security: list[SecurityItem],
+    new_kev: list[dict[str, str]],
+    tech: list[TechItem],
+    max_chars: int = COMPACT_PAYLOAD_CHARS,
+) -> dict[str, Any]:
+    """Smaller payload for fallback providers, shrunk step by step until it fits max_chars."""
+    kev_keys = ("cveID", "vendorProject", "product", "vulnerabilityName", "dueDate", "knownRansomwareCampaignUse")
+    payload: dict[str, Any] = {}
+    for text_limit, desc_limit, tech_count in ((900, 200, 25), (500, 150, 20), (250, 120, 15), (0, 80, 10)):
+        payload = {
+            "security_news": [
+                {
+                    "title": i.title,
+                    "link": i.link,
+                    "text": _clip(i.text or i.summary, text_limit),
+                    "cves": i.cves,
+                    "kev_exploited": i.kev_exploited,
+                    "ransomware": i.ransomware,
+                    "kev": [{k: e.get(k, "") for k in kev_keys} for e in i.kev],
+                }
+                for i in security
+            ],
+            "new_kev": [
+                {**{k: e.get(k, "") for k in kev_keys}, "shortDescription": _clip(e.get("shortDescription", ""), desc_limit)}
+                for e in new_kev
+            ],
+            "tech_news": [
+                {"title": t.title, "source_url": t.source_url, "snippet": _clip(t.snippet, 150)}
+                for t in tech[:tech_count]
+            ],
+        }
+        if len(json.dumps(payload, ensure_ascii=False, separators=(",", ":"))) <= max_chars:
+            break
+    return payload
 
 
 def build_prompt(payload: dict[str, Any], now: datetime) -> str:
@@ -200,21 +242,26 @@ class Runner:
             message = f"{header(self.now)}\n\n🌙 Quiet night, nothing new since the last brief.{failed_note(c.failed)}"
             summary = build_summary(self.now, QUIET_LOCKSCREEN)
         else:
-            log.info("Step 5/6: generating brief with Gemini (%s)", self.settings.gemini_model)
-            prompt = build_prompt(build_payload(security, new_kev, tech), self.now)
-            log.info("Prompt size: %d chars", len(prompt))
-            gemini = GeminiClient(self.session, self.settings.gemini_api_key, self.settings.gemini_model)
+            providers = build_providers(self.settings, self.session)
+            log.info("Step 5/6: generating brief (providers: %s)", " → ".join(p.name for p in providers))
+            full_prompt = build_prompt(build_payload(security, new_kev, tech), self.now)
+            compact_prompt = build_prompt(build_compact_payload(security, new_kev, tech), self.now)
             try:
-                output = parse_brief(gemini.generate_json(prompt))
-            except (GeminiError, requests.RequestException) as exc:
-                raise FatalError(f"Gemini failed: {exc}") from exc
-            log.info("Gemini model %s produced %d chars (parsed=%s)", gemini.model, len(output.telegram), output.parsed)
-            message = f"{header(self.now)}\n\n{output.telegram}{failed_note(c.failed)}"
+                result = generate_brief(providers, full_prompt, compact_prompt)
+            except AllProvidersFailed as exc:
+                raise FatalError(f"All LLM providers failed: {exc}") from exc
+            output = result.output
+            log.info("%s produced %d chars (parsed=%s)", result.label, len(output.telegram), output.parsed)
+            message = (
+                f"{header(self.now)}\n\n{output.telegram}{failed_note(c.failed)}"
+                f"\n\n<i>Written by {html.escape(result.label)}</i>"
+            )
             summary = build_summary(
                 self.now,
                 output.lockscreen,
                 new_kev_count=len(new_kev),
                 exploited_in_news_count=exploited,
+                generated_by=result.label,
             )
 
         state.remember(processed_links, kev_ids, self.now.isoformat(timespec="seconds"))

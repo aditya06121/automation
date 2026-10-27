@@ -16,6 +16,7 @@ def build_summary(
     new_kev_count: int = 0,
     exploited_in_news_count: int = 0,
     error: str | None = None,
+    generated_by: str | None = None,
 ) -> dict[str, Any]:
     """Return the summary.json payload."""
     summary: dict[str, Any] = {
@@ -26,6 +27,8 @@ def build_summary(
         "exploited_in_news_count": exploited_in_news_count,
         "status": "error" if error else "ok",
     }
+    if generated_by:
+        summary["generated_by"] = generated_by
     if error:
         summary["error"] = error[:300]
     return summary

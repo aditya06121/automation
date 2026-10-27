@@ -5,7 +5,9 @@ from typing import Any
 import pytest
 
 from brief import cli
+from brief.chat import ChatClient
 from brief.config import Settings
+from brief.gemini import GeminiClient, GeminiError
 from brief.sources import parse_bleepingcomputer, parse_kev, parse_techmeme
 from brief.state import LocalStore, State
 from conftest import NOW
@@ -41,7 +43,7 @@ def test_full_run_sends_then_saves_state(tmp_path: Path, sources: None, monkeypa
         prompts.append(prompt)
         return json.dumps({"telegram": "<b>Brief</b>", "lockscreen": "⚠️ Acme VPN exploited."})
 
-    monkeypatch.setattr(cli.GeminiClient, "generate_json", fake_generate)
+    monkeypatch.setattr(GeminiClient, "generate_json", fake_generate)
     tg = FakeTelegram()
     store = LocalStore(tmp_path / "s.json")
     code = cli.Runner(settings(tmp_path), None, store, tg, NOW).run()  # type: ignore[arg-type]
@@ -71,7 +73,7 @@ def test_partial_source_failure_is_noted(tmp_path: Path, sources: None, monkeypa
         raise ConnectionError("down")
 
     monkeypatch.setattr(cli, "fetch_techmeme", boom)
-    monkeypatch.setattr(cli.GeminiClient, "generate_json", lambda self, p: '{"telegram": "x", "lockscreen": "y"}')
+    monkeypatch.setattr(GeminiClient, "generate_json", lambda self, p: '{"telegram": "x", "lockscreen": "y"}')
     tg = FakeTelegram()
     cli.Runner(settings(tmp_path), None, LocalStore(tmp_path / "s.json"), tg, NOW).run()  # type: ignore[arg-type]
     assert "could not fetch Techmeme" in tg.html[0]
@@ -101,9 +103,9 @@ def test_fail_writes_error_summary_and_alert(tmp_path: Path) -> None:
 
 def test_gemini_failure_does_not_save_state(tmp_path: Path, sources: None, monkeypatch: pytest.MonkeyPatch) -> None:
     def fail(self: Any, prompt: str) -> str:
-        raise cli.GeminiError("quota")
+        raise GeminiError("quota")
 
-    monkeypatch.setattr(cli.GeminiClient, "generate_json", fail)
+    monkeypatch.setattr(GeminiClient, "generate_json", fail)
     store = LocalStore(tmp_path / "s.json")
     with pytest.raises(cli.FatalError):
         cli.Runner(settings(tmp_path), None, store, FakeTelegram(), NOW).run()  # type: ignore[arg-type]
@@ -111,9 +113,58 @@ def test_gemini_failure_does_not_save_state(tmp_path: Path, sources: None, monke
 
 
 def test_dry_run_prints_and_saves_nothing(tmp_path: Path, sources: None, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture) -> None:
-    monkeypatch.setattr(cli.GeminiClient, "generate_json", lambda self, p: '{"telegram": "BRIEF", "lockscreen": "PARA"}')
+    monkeypatch.setattr(GeminiClient, "generate_json", lambda self, p: '{"telegram": "BRIEF", "lockscreen": "PARA"}')
     store = LocalStore(tmp_path / "s.json")
     assert cli.Runner(settings(tmp_path, dry_run=True), None, store, None, NOW).run() == 0  # type: ignore[arg-type]
     out = capsys.readouterr().out
     assert "BRIEF" in out and '"lockscreen": "PARA"' in out
     assert not store.path.exists() and not store.summary_path.exists()
+
+
+def test_falls_back_to_github_models_then_footer_names_it(
+    tmp_path: Path, sources: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    prompts: list[str] = []
+
+    def gemini_down(self: Any, prompt: str) -> str:
+        raise GeminiError("HTTP 503: high demand")
+
+    def github_ok(self: Any, prompt: str) -> str:
+        prompts.append(prompt)
+        return '{"telegram": "<b>From GitHub</b>", "lockscreen": "Para."}'
+
+    monkeypatch.setattr(GeminiClient, "generate_json", gemini_down)
+    monkeypatch.setattr(ChatClient, "generate_json", github_ok)
+    s = Settings("k", "m", "t", "c", "", "", no_fulltext=True, local_state=tmp_path / "s.json",
+                 github_models_token="gh", groq_api_key="gq")
+    tg = FakeTelegram()
+    store = LocalStore(tmp_path / "s.json")
+    assert cli.Runner(s, None, store, tg, NOW).run() == 0  # type: ignore[arg-type]
+    assert "From GitHub" in tg.html[0]
+    assert "Written by GitHub Models (openai/gpt-4.1)" in tg.html[0]
+    assert len(prompts) == 1  # Groq never needed
+    summary = json.loads(store.summary_path.read_text())
+    assert summary["generated_by"] == "GitHub Models (openai/gpt-4.1)"
+
+
+def test_all_providers_failing_is_fatal(tmp_path: Path, sources: None, monkeypatch: pytest.MonkeyPatch) -> None:
+    def down(self: Any, prompt: str) -> str:
+        raise RuntimeError("down")
+
+    monkeypatch.setattr(GeminiClient, "generate_json", down)
+    monkeypatch.setattr(ChatClient, "generate_json", down)
+    s = Settings("k", "m", "t", "c", "", "", no_fulltext=True, local_state=tmp_path / "s.json",
+                 github_models_token="gh", groq_api_key="gq")
+    with pytest.raises(cli.FatalError, match="Gemini.*GitHub Models.*Groq"):
+        cli.Runner(s, None, LocalStore(tmp_path / "s.json"), FakeTelegram(), NOW).run()  # type: ignore[arg-type]
+
+
+def test_compact_payload_fits_budget(bc_bytes: bytes, tm_bytes: bytes) -> None:
+    security = parse_bleepingcomputer(bc_bytes)
+    for item in security:
+        item.text = "long article text " * 400
+    tech = parse_techmeme(tm_bytes) * 10
+    full = cli.build_payload(security, [], tech)
+    compact = cli.build_compact_payload(security, [], tech, max_chars=6000)
+    assert len(json.dumps(compact)) <= 6000 < len(json.dumps(full))
+    assert all(len(i["text"]) <= 900 for i in compact["security_news"])

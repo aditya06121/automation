@@ -5,7 +5,7 @@ Every night at **00:00 IST**, a GitHub Actions workflow:
 1. Fetches **BleepingComputer** (security news, with full article text), **Techmeme** (global tech headlines) and the **CISA KEV** catalog.
 2. Keeps only items not seen in earlier runs and published in the last ~36 hours.
 3. Tags security stories whose CVEs are in KEV as **actively exploited** (and 🦠 if KEV marks them as used by ransomware), and finds newly added KEV entries.
-4. Asks **Gemini** for a detailed Telegram brief and a ~600–900 character lockscreen paragraph.
+4. Asks an LLM for a detailed Telegram brief and a ~600–900 character lockscreen paragraph. It tries **Gemini** first, then falls back to **GitHub Models** and **Groq** (both free) if Gemini is down.
 5. Sends the brief to you on **Telegram**.
 6. Writes `summary.json` to a **secret gist**. Your Scriptable script and Shortcut read it to build the lockscreen wallpaper.
 
@@ -27,7 +27,18 @@ tests/                 pytest suite with offline fixtures
 1. Go to <https://aistudio.google.com/apikey> and sign in.
 2. Click **Create API key** and copy it. This is `GEMINI_API_KEY`.
 3. Optional: `GEMINI_MODEL` (default `gemini-2.5-flash`). In October 2026 testing, the newer `gemini-3.7-flash`, `gemini-3.8-flash` and `gemini-flash-latest` were overloaded (hanging, or returning 503 "high demand"), so 2.5 is the default. If the model returns 404 or "not supported", the script automatically picks the newest stable `flash` model and logs which one it used.
-4. Each Gemini attempt has a hard 90-second limit, and all attempts together have 5 minutes. A hung request can't stall the job until GitHub kills it at 10 minutes; instead you get the failure alert.
+4. Each Gemini attempt has a hard 90-second limit (see step 1b for the overall time limits). A hung request can't stall the job until GitHub kills it at 10 minutes.
+
+### 1b. Fallback LLMs (free, recommended)
+Gemini's newer models were often overloaded in testing, so the brief has two fallbacks, tried in this order:
+
+1. **Gemini** (`GEMINI_API_KEY`), which gets the full input including article text.
+2. **GitHub Models**. Nothing to set up: in Actions it uses the built-in `GITHUB_TOKEN` (the workflow requests `models: read`). The default model is `openai/gpt-4.1`; to change it, set a `GITHUB_MODELS_MODEL` secret using a model ID from <https://github.com/marketplace?type=models>.
+3. **Groq**. Create a free key at <https://console.groq.com/keys> and add it as the `GROQ_API_KEY` secret. The default model is `openai/gpt-oss-120b`; change it with a `GROQ_MODEL` secret.
+
+The fallbacks have small free-tier request limits, so they get a **compact** input: shorter article excerpts and fewer fields. Any provider that isn't configured is skipped. The brief's last line ("Written by …") and the `generated_by` field in `summary.json` show which provider wrote it.
+
+Time limits: Gemini gets at most 2.5 minutes, then GitHub Models and Groq get 1.5 minutes each. The whole job stays inside its 10-minute limit even if every provider hangs.
 
 ### 2. Telegram bot and chat ID
 1. In Telegram, open **@BotFather**, send `/newbot`, and follow the prompts.
@@ -60,6 +71,8 @@ In this repo, go to **Settings → Secrets and variables → Actions → New rep
 |---|---|
 | `GEMINI_API_KEY` | from step 1 |
 | `GEMINI_MODEL` | optional; defaults to `gemini-2.5-flash` |
+| `GROQ_API_KEY` | optional but recommended; from step 1b |
+| `GITHUB_MODELS_MODEL`, `GROQ_MODEL` | optional model overrides |
 | `TELEGRAM_TOKEN` | from step 2 |
 | `TELEGRAM_CHAT_ID` | from step 2 |
 | `GIST_TOKEN` | from step 4 |
@@ -101,7 +114,7 @@ https://gist.githubusercontent.com/<user>/<GIST_ID>/raw/summary.json?t=<unix-tim
 - **Scheduled runs can start 10–30 minutes late**, especially around the top of the hour. GitHub also disables scheduled workflows after 60 days with no repository activity; re-enable them from the Actions tab if that happens.
 - **Keep this repo private.**
 - **A secret gist is unlisted, not private.** Anyone with the URL can read it. It only ever holds news links, KEV IDs and the summary, so **never put secrets in it.**
-- A run fails (red ❌ in Actions) and sends you a short Telegram alert if all sources fail or Gemini fails after retries. If only one source fails, the brief still goes out with a note at the bottom.
+- A run fails (red ❌ in Actions) and sends you a short Telegram alert if all sources fail, or if every LLM provider (Gemini, GitHub Models, Groq) fails. If only one source fails, the brief still goes out with a note at the bottom.
 
 ### 9. Editing the Gemini prompt
 Edit [`prompts/brief.txt`](prompts/brief.txt) and commit. The input JSON is appended automatically after the prompt, and `{{DATE_IST}}` is replaced with today's date.

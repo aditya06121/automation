@@ -16,10 +16,16 @@ USER_AGENT = (
     "(KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
 )
 HTTP_TIMEOUT = 15
-FULLTEXT_BUDGET = 120  # seconds for all article downloads; the rest fall back to RSS teasers
+FULLTEXT_BUDGET = 90  # seconds for all article downloads; the rest fall back to RSS teasers
 
 # Newer flash models (3.7/3.8, flash-latest) were overloaded or hanging in testing (Oct 2026)
 DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
+DEFAULT_GITHUB_MODELS_MODEL = "openai/gpt-4.1"
+DEFAULT_GROQ_MODEL = "openai/gpt-oss-120b"  # Groq retired llama-3.3-70b-versatile in Aug 2026
+
+# Fallback providers have small free-tier request limits (GitHub Models: 8k input tokens),
+# so they get a compact payload: shorter article text, fewer fields.
+COMPACT_PAYLOAD_CHARS = 12000
 
 IST = timezone(timedelta(hours=5, minutes=30), "IST")
 
@@ -50,6 +56,10 @@ class Settings:
     dry_run: bool = False
     no_fulltext: bool = False
     local_state: Path | None = None
+    github_models_token: str = ""
+    github_models_model: str = DEFAULT_GITHUB_MODELS_MODEL
+    groq_api_key: str = ""
+    groq_model: str = DEFAULT_GROQ_MODEL
 
     @classmethod
     def from_env(
@@ -67,11 +77,19 @@ class Settings:
             dry_run=dry_run,
             no_fulltext=no_fulltext,
             local_state=local_state,
+            github_models_token=env("GITHUB_MODELS_TOKEN", "").strip(),
+            github_models_model=env("GITHUB_MODELS_MODEL", "").strip() or DEFAULT_GITHUB_MODELS_MODEL,
+            groq_api_key=env("GROQ_API_KEY", "").strip(),
+            groq_model=env("GROQ_MODEL", "").strip() or DEFAULT_GROQ_MODEL,
         )
 
     def missing(self) -> list[str]:
         """Return names of required env vars that are unset for this run mode."""
-        required = {"GEMINI_API_KEY": self.gemini_api_key}
+        required = {
+            "GEMINI_API_KEY or GITHUB_MODELS_TOKEN or GROQ_API_KEY": (
+                self.gemini_api_key or self.github_models_token or self.groq_api_key
+            )
+        }
         if not self.dry_run:
             required["TELEGRAM_TOKEN"] = self.telegram_token
             required["TELEGRAM_CHAT_ID"] = self.telegram_chat_id

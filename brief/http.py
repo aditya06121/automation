@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import threading
+from typing import Any
+
 import requests
 
 from brief.config import USER_AGENT
@@ -18,3 +21,30 @@ def make_session() -> requests.Session:
         }
     )
     return session
+
+
+def post_with_deadline(
+    session: requests.Session, url: str, timeout: float, **kwargs: Any
+) -> requests.Response:
+    """POST with a hard wall-clock limit.
+
+    requests' timeout only bounds each socket read, so a server that trickles
+    bytes or stalls mid-response can hold a call open far longer. The request
+    runs in a daemon thread that we stop waiting for after `timeout` seconds.
+    """
+    result: dict[str, Any] = {}
+
+    def target() -> None:
+        try:
+            result["resp"] = session.post(url, timeout=(10, timeout), **kwargs)
+        except BaseException as exc:
+            result["exc"] = exc
+
+    thread = threading.Thread(target=target, daemon=True)
+    thread.start()
+    thread.join(timeout)
+    if thread.is_alive():
+        raise requests.Timeout(f"no response within {timeout:.0f}s")
+    if "exc" in result:
+        raise result["exc"]
+    return result["resp"]

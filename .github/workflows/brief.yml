@@ -12,6 +12,7 @@ on:
 
 permissions:
   contents: read
+  models: read # lets the built-in GITHUB_TOKEN call GitHub Models (free fallback LLM)
 
 concurrency:
   group: daily-brief
@@ -36,6 +37,10 @@ jobs:
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
+          GITHUB_MODELS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_MODELS_MODEL: ${{ secrets.GITHUB_MODELS_MODEL }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GROQ_MODEL: ${{ secrets.GROQ_MODEL }}
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           GIST_TOKEN: ${{ secrets.GIST_TOKEN }}

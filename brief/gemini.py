@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import logging
 import re
-import threading
 import time
 from dataclasses import dataclass
 from typing import Any, Callable
@@ -13,12 +12,13 @@ from typing import Any, Callable
 import requests
 
 from brief.config import LOCKSCREEN_MAX_CHARS
+from brief.http import post_with_deadline
 
 log = logging.getLogger(__name__)
 
 API_BASE = "https://generativelanguage.googleapis.com/v1beta"
 REQUEST_TIMEOUT = 90  # hard wall-clock limit per attempt
-TOTAL_BUDGET = 300  # all attempts (incl. model fallback) must finish inside the 10-minute job
+TOTAL_BUDGET = 150  # all Gemini attempts; leaves room for GitHub Models/Groq fallbacks in the 10-minute job
 MIN_ATTEMPT_SECONDS = 20  # don't start an attempt with less time than this left
 MAX_RETRIES = 3
 EXCLUDED_VARIANTS = ("image", "tts", "live", "embedding", "audio")
@@ -162,32 +162,6 @@ class GeminiClient:
     def _remaining(self) -> float:
         return self._deadline - time.monotonic()
 
-    def _post_once(self, url: str, body: dict[str, Any], timeout: float) -> requests.Response:
-        """POST with a hard wall-clock limit.
-
-        requests' timeout only bounds each socket read, so a server that trickles
-        bytes or stalls mid-response can hold a call open far longer. The request
-        runs in a daemon thread that we stop waiting for after `timeout` seconds.
-        """
-        result: dict[str, Any] = {}
-
-        def target() -> None:
-            try:
-                result["resp"] = self.session.post(
-                    url, headers=self._headers, json=body, timeout=(10, timeout)
-                )
-            except BaseException as exc:
-                result["exc"] = exc
-
-        thread = threading.Thread(target=target, daemon=True)
-        thread.start()
-        thread.join(timeout)
-        if thread.is_alive():
-            raise requests.Timeout(f"no response within {timeout:.0f}s")
-        if "exc" in result:
-            raise result["exc"]
-        return result["resp"]
-
     def _post(self, model: str, body: dict[str, Any]) -> dict[str, Any]:
         """POST generateContent with retries on transient errors, within the total budget."""
         url = f"{API_BASE}/models/{model}:generateContent"
@@ -199,7 +173,9 @@ class GeminiClient:
                     f"time budget of {self.total_budget:.0f}s used up after {attempt} attempt(s): {error}"
                 )
             try:
-                resp = self._post_once(url, body, min(self.request_timeout, remaining))
+                resp = post_with_deadline(
+                    self.session, url, min(self.request_timeout, remaining), headers=self._headers, json=body
+                )
             except requests.RequestException as exc:
                 error = f"network error: {exc.__class__.__name__}"
             else:
