@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/">
+<channel>
+  <title>BleepingComputer</title>
+  <link>https://www.bleepingcomputer.com/</link>
+  <description>BleepingComputer - All Stories</description>
+  <item>
+    <title>Hackers exploit Acme VPN flaw CVE-2026-1001 in ransomware attacks</title>
+    <link>https://www.bleepingcomputer.com/news/security/acme-vpn-flaw-exploited/</link>
+    <pubDate>Mon, 26 Oct 2026 10:00:10 -0400</pubDate>
+    <dc:creator>Jane Doe</dc:creator>
+    <category><![CDATA[Security]]></category>
+    <category><![CDATA[Ransomware]]></category>
+    <guid>https://www.bleepingcomputer.com/news/security/acme-vpn-flaw-exploited/</guid>
+    <description><![CDATA[Threat actors are exploiting a critical Acme VPN bug, also tracked with cve-2026-1002 and CVE-2026-1001, to breach networks. [...]]]></description>
+  </item>
+  <item>
+    <title>Widget CMS patches critical RCE</title>
+    <link>https://www.bleepingcomputer.com/news/security/widget-cms-rce/</link>
+    <pubDate>Mon, 26 Oct 2026 08:30:00 -0400</pubDate>
+    <category><![CDATA[Security]]></category>
+    <guid>https://www.bleepingcomputer.com/news/security/widget-cms-rce/</guid>
+    <description><![CDATA[Widget CMS fixed <b>CVE-2026-55555</b>, a remote code execution flaw. [...]]]></description>
+  </item>
+  <item>
+    <title>Kali Linux 2026.3 released with 6 new tools</title>
+    <link>https://www.bleepingcomputer.com/news/linux/kali-linux-2026-3-released/</link>
+    <pubDate>Mon, 26 Oct 2026 07:00:00 -0400</pubDate>
+    <category><![CDATA[Linux]]></category>
+    <guid>https://www.bleepingcomputer.com/news/linux/kali-linux-2026-3-released/</guid>
+    <description><![CDATA[Kali Linux 2026.3 is out with new tools. [...]]]></description>
+  </item>
+  <item>
+    <title>Old story from last week</title>
+    <link>https://www.bleepingcomputer.com/news/security/old-story/</link>
+    <pubDate>Tue, 20 Oct 2026 07:00:00 -0400</pubDate>
+    <category><![CDATA[Security]]></category>
+    <guid>https://www.bleepingcomputer.com/news/security/old-story/</guid>
+    <description><![CDATA[This happened a while ago. [...]]]></description>
+  </item>
+</channel>
+</rss>
