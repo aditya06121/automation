@@ -11,7 +11,7 @@ from typing import Any, Callable
 
 import requests
 
-from brief.config import LOCKSCREEN_MAX_CHARS
+from brief.config import LOCKSCREEN_MAX_POINTS, LOCKSCREEN_POINT_MAX_CHARS
 from brief.http import post_with_deadline
 
 log = logging.getLogger(__name__)
@@ -24,11 +24,13 @@ MAX_RETRIES = 3
 EXCLUDED_VARIANTS = ("image", "tts", "live", "embedding", "audio")
 UNSTABLE_MARKERS = ("preview", "exp")
 GENERIC_LOCKSCREEN = (
-    "Today's tech and security brief is in Telegram. "
-    "The lockscreen summary could not be generated this time."
+    "Today's brief is in Telegram",
+    "Lockscreen points could not be generated",
 )
 
 _FENCE_RE = re.compile(r"^\s*```[a-zA-Z]*\s*\n?(.*?)\n?\s*```\s*$", re.DOTALL)
+_BULLET_RE = re.compile(r"^(?:[-*•·]|\d+[.)])\s+")
+_SENTENCE_RE = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9⚠])")
 _VERSION_RE = re.compile(r"gemini-(\d+(?:\.\d+)?)")
 
 
@@ -45,7 +47,7 @@ class BriefOutput:
     """Parsed Gemini output."""
 
     telegram: str
-    lockscreen: str
+    lockscreen: list[str]
     parsed: bool
 
 
@@ -72,20 +74,32 @@ def strip_fences(text: str) -> str:
     return match.group(1) if match else text.strip()
 
 
-def normalize_lockscreen(value: Any) -> str:
-    """Collapse the lockscreen value into one paragraph, soft-capped at a sentence boundary."""
-    if isinstance(value, list):
-        value = " ".join(str(v) for v in value)
-    text = " ".join(str(value or "").split())
-    if not text:
-        return GENERIC_LOCKSCREEN
-    if len(text) <= LOCKSCREEN_MAX_CHARS:
+def _clip_point(text: str) -> str:
+    if len(text) <= LOCKSCREEN_POINT_MAX_CHARS:
         return text
-    cut = text[:LOCKSCREEN_MAX_CHARS]
-    end = max(cut.rfind(". "), cut.rfind("! "), cut.rfind("? "))
-    if end >= LOCKSCREEN_MAX_CHARS // 2:
-        return cut[: end + 1]
-    return cut[: cut.rfind(" ")].rstrip(",;:") + "…"
+    cut = text[: LOCKSCREEN_POINT_MAX_CHARS - 1]
+    return cut[: cut.rfind(" ")].rstrip(",;:-") + "…" if " " in cut else cut + "…"
+
+
+def normalize_lockscreen(value: Any) -> list[str]:
+    """Turn the model's lockscreen value into a list of short points.
+
+    Accepts a list (expected) or a string (one point per line, or per sentence if
+    it is a single paragraph). Strips bullet markers, clips long points, caps the count.
+    """
+    if isinstance(value, list):
+        raw = [str(v) for v in value]
+    else:
+        text = str(value or "").strip()
+        raw = text.splitlines()
+        if len(raw) == 1:
+            raw = _SENTENCE_RE.split(text)
+    points = []
+    for item in raw:
+        point = _BULLET_RE.sub("", " ".join(item.split()))
+        if point:
+            points.append(_clip_point(point))
+    return points[:LOCKSCREEN_MAX_POINTS] or list(GENERIC_LOCKSCREEN)
 
 
 def parse_brief(text: str) -> BriefOutput:
@@ -97,10 +111,12 @@ def parse_brief(text: str) -> BriefOutput:
             raise ValueError("empty telegram field")
     except (ValueError, KeyError, TypeError) as exc:
         log.warning("Could not parse Gemini JSON (%s); using raw text", exc)
-        return BriefOutput(telegram=text.strip(), lockscreen=GENERIC_LOCKSCREEN, parsed=False)
-    return BriefOutput(
-        telegram=telegram.strip(), lockscreen=normalize_lockscreen(data.get("lockscreen")), parsed=True
-    )
+        return BriefOutput(telegram=text.strip(), lockscreen=list(GENERIC_LOCKSCREEN), parsed=False)
+    raw_points = data.get("lockscreen")
+    points = normalize_lockscreen(raw_points)
+    if points == list(GENERIC_LOCKSCREEN):
+        log.warning("Model returned no usable lockscreen points (got %s: %.100r)", type(raw_points).__name__, raw_points)
+    return BriefOutput(telegram=telegram.strip(), lockscreen=points, parsed=True)
 
 
 # ---------- model fallback ----------

@@ -48,14 +48,14 @@ def test_parse_brief_fenced_and_plain(text: str) -> None:
     out = parse_brief(text)
     assert out.parsed
     assert out.telegram == "<b>Hi</b>"
-    assert out.lockscreen == "Para."
+    assert out.lockscreen == ["Para."]
 
 
 def test_parse_brief_invalid_json_falls_back_to_raw() -> None:
     out = parse_brief("<b>Not JSON</b> brief text")
     assert not out.parsed
     assert out.telegram == "<b>Not JSON</b> brief text"
-    assert out.lockscreen == GENERIC_LOCKSCREEN
+    assert out.lockscreen == list(GENERIC_LOCKSCREEN)
 
 
 def test_parse_brief_missing_key_falls_back() -> None:
@@ -66,13 +66,25 @@ def test_strip_fences_noop() -> None:
     assert strip_fences('{"a": 1}') == '{"a": 1}'
 
 
-def test_normalize_lockscreen() -> None:
-    assert normalize_lockscreen("a\nb   c") == "a b c"
-    assert normalize_lockscreen(["one.", "two."]) == "one. two."
-    assert normalize_lockscreen("") == GENERIC_LOCKSCREEN
-    long = "This is a sentence about something important. " * 40
-    out = normalize_lockscreen(long)
-    assert len(out) <= 1000 and out.endswith(".")
+def test_normalize_lockscreen_list() -> None:
+    raw = ["⚠️ Acme VPN exploited", "  - Big Co earnings ", "", "2. Third point"] + [f"p{i}" for i in range(10)]
+    out = normalize_lockscreen(raw)
+    assert out[:3] == ["⚠️ Acme VPN exploited", "Big Co earnings", "Third point"]
+    assert len(out) == 8
+
+
+def test_normalize_lockscreen_from_strings() -> None:
+    assert normalize_lockscreen("• one\n• two") == ["one", "two"]
+    assert normalize_lockscreen("First thing happened. Second thing too. ⚠️ Third.") == [
+        "First thing happened.", "Second thing too.", "⚠️ Third."
+    ]
+    assert normalize_lockscreen("") == list(GENERIC_LOCKSCREEN)
+    assert normalize_lockscreen(None) == list(GENERIC_LOCKSCREEN)
+
+
+def test_normalize_lockscreen_clips_long_points() -> None:
+    (point,) = normalize_lockscreen(["word " * 40])
+    assert len(point) <= 90 and point.endswith("…")
 
 
 def test_pick_fallback_model_prefers_stable_newest_full_flash(models_data: dict) -> None:

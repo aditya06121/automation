@@ -7,12 +7,12 @@ from typing import Any
 
 from brief.config import IST
 
-QUIET_LOCKSCREEN = "Quiet night: no new tech or security stories and no new CISA KEV entries since the last brief."
+QUIET_LOCKSCREEN = ["Quiet night: nothing new since the last brief", "No new CISA KEV entries"]
 
 
 def build_summary(
     now: datetime,
-    lockscreen: str,
+    lockscreen: list[str],
     new_kev_count: int = 0,
     exploited_in_news_count: int = 0,
     error: str | None = None,

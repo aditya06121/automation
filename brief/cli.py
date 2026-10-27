@@ -283,7 +283,7 @@ class Runner:
     def fail(self, error: str) -> None:
         """Best-effort alert and error summary; never raises."""
         log.error("Run failed: %s", error)
-        summary = build_summary(self.now, f"⚠️ Brief failed: {error[:150]}", error=error)
+        summary = build_summary(self.now, ["Brief failed — check Telegram/Actions", error[:150]], error=error)
         if self.settings.dry_run:
             print("\n========== summary.json (error) ==========\n" + json.dumps(summary, indent=2, ensure_ascii=False))
             return

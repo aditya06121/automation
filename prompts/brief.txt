@@ -23,7 +23,8 @@ Return a JSON object with exactly two keys: "telegram" and "lockscreen".
 - Never invent facts, CVE IDs, dates or links. Use only the provided data.
 - If a section has no items, say so in one line (for example "Nothing new today.").
 
-"lockscreen": one dense paragraph of plain text, about 600–900 characters, to be shown on a phone lockscreen wallpaper.
-- Cover the most important items of the day: actively exploited vulnerabilities and new KEV entries first (with CVE IDs and affected products), then the biggest security incidents, then the biggest global tech stories.
-- Write compact, information-dense sentences. No links, no HTML, no markdown, no line breaks, and no emoji except ⚠️.
+"lockscreen": a JSON array of 6 to 8 short points for a phone lockscreen wallpaper, most important first.
+- Each point is one plain-text line of at most 70 characters: a headline-style fragment, not a full sentence (e.g. "Acme VPN auth bypass exploited, CVE-XXXX-XXXXX, KEV due Nov 3").
+- Order: actively exploited vulnerabilities and new KEV entries first (include the CVE ID and product), then the biggest security incidents, then the biggest global tech stories.
+- Start a point with "⚠️ " only if it is actively exploited (KEV-listed). No other emoji, no links, no HTML, no markdown, no bullet characters.
 - Never invent facts.

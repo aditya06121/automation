@@ -37,7 +37,8 @@ MAX_NEW_KEV = 15
 MAX_TECH_NEWS = 30
 MAX_SEEN_LINKS = 1000
 
-LOCKSCREEN_MAX_CHARS = 1000
+LOCKSCREEN_MAX_POINTS = 8
+LOCKSCREEN_POINT_MAX_CHARS = 90
 
 ROOT = Path(__file__).resolve().parent.parent
 PROMPT_PATH = ROOT / "prompts" / "brief.txt"

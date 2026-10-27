@@ -41,7 +41,7 @@ def test_full_run_sends_then_saves_state(tmp_path: Path, sources: None, monkeypa
 
     def fake_generate(self: Any, prompt: str) -> str:
         prompts.append(prompt)
-        return json.dumps({"telegram": "<b>Brief</b>", "lockscreen": "⚠️ Acme VPN exploited."})
+        return json.dumps({"telegram": "<b>Brief</b>", "lockscreen": ["⚠️ Acme VPN exploited", "Big Co earnings"]})
 
     monkeypatch.setattr(GeminiClient, "generate_json", fake_generate)
     tg = FakeTelegram()
@@ -60,6 +60,7 @@ def test_full_run_sends_then_saves_state(tmp_path: Path, sources: None, monkeypa
     summary = json.loads(store.summary_path.read_text())
     assert summary["status"] == "ok" and summary["date_ist"] == "27 Oct"
     assert summary["new_kev_count"] == 3 and summary["exploited_in_news_count"] == 1
+    assert summary["lockscreen"] == ["⚠️ Acme VPN exploited", "Big Co earnings"]
 
     # second run: nothing new -> quiet night
     tg2 = FakeTelegram()
@@ -113,11 +114,11 @@ def test_gemini_failure_does_not_save_state(tmp_path: Path, sources: None, monke
 
 
 def test_dry_run_prints_and_saves_nothing(tmp_path: Path, sources: None, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture) -> None:
-    monkeypatch.setattr(GeminiClient, "generate_json", lambda self, p: '{"telegram": "BRIEF", "lockscreen": "PARA"}')
+    monkeypatch.setattr(GeminiClient, "generate_json", lambda self, p: '{"telegram": "BRIEF", "lockscreen": ["PARA"]}')
     store = LocalStore(tmp_path / "s.json")
     assert cli.Runner(settings(tmp_path, dry_run=True), None, store, None, NOW).run() == 0  # type: ignore[arg-type]
     out = capsys.readouterr().out
-    assert "BRIEF" in out and '"lockscreen": "PARA"' in out
+    assert "BRIEF" in out and '"PARA"' in out
     assert not store.path.exists() and not store.summary_path.exists()
 
 

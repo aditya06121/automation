@@ -84,30 +84,43 @@ In this repo, go to **Settings → Secrets and variables → Actions → New rep
 3. Run it again with **Dry run** unticked. You should get the brief on Telegram, and the gist's `state.json` and `summary.json` should update.
 4. From then on, it runs automatically every night.
 
-### 7. Lockscreen wallpaper: `summary.json` contract
-Your Scriptable script should fetch the raw gist file, with a cache-busting query parameter so you don't get a stale CDN copy:
+### 7. Lockscreen wallpaper
+[`widget/lockscreen-wallpaper.js`](widget/lockscreen-wallpaper.js) is agaragou's [Year Progress calendar wallpaper](https://github.com/agaragou/LockScreen-Calendar-ShortCut) script, with a **news card added below the calendar**:
+
+- **Header:** `📰 27 Oct` on the left. On the right, `⚠️ 2 new KEV · 1 exploited`, or `stale · 2d old` if the nightly run hasn't updated the data.
+- **Body:** 6–8 short points, most important first. Actively exploited items get ⚠️ as their bullet.
+- **Sizing:** the font is as large as fits in the space between the calendar and the bottom widget area (15pt down to 9pt). If the points still don't fit at 9pt, the last (least important) points are dropped.
+- **Offline:** it falls back to the last downloaded copy. With no data at all, it draws the calendar without a card.
+
+Setup: in Scriptable, replace your existing calendar script's contents with this file. Your Shortcut doesn't change: it still runs the script and sets the image it returns as the wallpaper. Schedule the Shortcut for after about 1 AM IST so it picks up the new brief. The news settings are in section 8 of `CONFIG` at the top of the script.
+
+The script fetches the raw gist file, with a cache-busting parameter:
 
 ```
-https://gist.githubusercontent.com/<user>/<GIST_ID>/raw/summary.json?t=<unix-time>
+https://gist.githubusercontent.com/aditya06121/<GIST_ID>/raw/summary.json?t=<unix-time>
 ```
 
-(Leave the commit hash out of the raw URL so it always serves the latest version.)
+`summary.json` looks like this:
 
 ```json
 {
   "generated_at": "2026-10-27T00:01:12+05:30",
   "date_ist": "27 Oct",
-  "lockscreen": "One dense ~600–900 char paragraph covering exploited vulns, new KEV entries, big incidents and top tech stories...",
+  "lockscreen": [
+    "⚠️ Acme VPN auth bypass exploited, CVE-XXXX-XXXXX, KEV due Nov 3",
+    "Big Co data breach exposes 500,000 people",
+    "..."
+  ],
   "new_kev_count": 2,
-  "exploited_in_news_count": 3,
-  "status": "ok"
+  "exploited_in_news_count": 1,
+  "status": "ok",
+  "generated_by": "Gemini (gemini-2.5-flash)"
 }
 ```
 
-- `status` is `"ok"` or `"error"`. On error there is also an `"error"` field, and `lockscreen` contains a short "⚠️ Brief failed: ..." sentence.
+- `lockscreen` is a list of 6–8 plain-text points (≤ ~70 characters each, ⚠️ only on actively exploited items).
+- `status` is `"ok"` or `"error"`. On error there is an `"error"` field, and `lockscreen` holds a short failure message.
 - On a quiet night, `lockscreen` says nothing new arrived.
-- Treat the data as stale if `generated_at` is more than ~36 hours old.
-- `lockscreen` is plain text, at most ~1000 characters, with no line breaks or links. Its only emoji is ⚠️.
 
 ### 8. Notes
 - **Cron runs in UTC.** `30 18 * * *` is 18:30 UTC, which is 00:00 IST.
